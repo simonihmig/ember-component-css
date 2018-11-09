@@ -5,6 +5,9 @@ var Merge = require('broccoli-merge-trees');
 var ProcessStyles = require('./lib/pod-style.js');
 var ExtractNames = require('./lib/pod-names.js');
 var StyleManifest = require('broccoli-style-manifest');
+const BroccoliDebug = require('broccoli-debug');
+
+const debugTree = BroccoliDebug.buildDebugCallback(`ember-component-css`);
 
 module.exports = {
 
@@ -102,8 +105,9 @@ module.exports = {
       routeRootPaths: [],
       componentRootPaths: []
     };
+    this.addonConfig.modulePrefix = this.appConfig.modulePrefix;
     if (this.appConfig.podModulePrefix) {
-      this.addonConfig.routeRootPaths.push(this.appConfig.podModulePrefix.split(this.appConfig.modulePrefix+'/')[1]);
+      this.addonConfig.routeRootPaths.push(this.appConfig.podModulePrefix.split(this.appConfig.modulePrefix + '/')[1]);
     }
     this.projectRoot = this._projectRoot(app.trees);
 
@@ -114,14 +118,14 @@ module.exports = {
 
   config: function(enviroment) {
     var config = {
-      "ember-component-css": {
+      'ember-component-css': {
         terseClassNames: false,
         routeRootPaths: [],
-        componentRootPaths: [],
-      },
+        componentRootPaths: []
+      }
     };
     if (enviroment === 'production') {
-      config["ember-component-css"].terseClassNames = true;
+      config['ember-component-css'].terseClassNames = true;
     }
     return config;
   },
@@ -157,7 +161,7 @@ module.exports = {
 
   treeForStyles: function(tree) {
     tree = this.processComponentStyles(tree);
-    return this._super.treeForStyles.call(this, tree);
+    return debugTree(this._super.treeForStyles.call(this, tree), 'styles');
   },
 
   processComponentStyles: function(tree) {
@@ -165,31 +169,44 @@ module.exports = {
     podStyles = new Funnel(podStyles, {
       destDir: this._isAddon() ? this.parent.name : this.parent.name()
     });
+    podStyles = debugTree(podStyles, 'podStyles');
     this._allPodStyles.push(podStyles);
 
     if (this._namespacingIsEnabled()) {
-      podStyles = new ProcessStyles(podStyles, {
-        addonConfig: this.addonConfig,
-        extensions: this.allowedStyleExtensions,
-        classicStyleDir: this.classicStyleDir,
-        terseClassNames: this.terseClassNames,
-        annotation: 'Filter (ember-component-css process :--component with class names)'
-      });
+      podStyles = debugTree(
+        new ProcessStyles(podStyles, {
+          addonConfig: this.addonConfig,
+          extensions: this.allowedStyleExtensions,
+          classicStyleDir: this.classicStyleDir,
+          terseClassNames: this.terseClassNames,
+          annotation: 'Filter (ember-component-css process :--component with class names)'
+        }),
+        'podStylesNamespacing'
+      );
     }
 
-    var podStylesWithoutExcluded = new Funnel(podStyles, {
-      exclude: this.addonConfig.excludeFromManifest || [],
-      annotation: 'Funnel (ember-component-css exclude style files from manifest)'
-    });
+    var podStylesWithoutExcluded = debugTree(
+      new Funnel(podStyles, {
+        exclude: this.addonConfig.excludeFromManifest || [],
+        annotation: 'Funnel (ember-component-css exclude style files from manifest)'
+      }),
+      'podStylesWithoutExcluded'
+    );
 
-    var styleManifest = new StyleManifest(podStylesWithoutExcluded, {
-      outputFileNameWithoutExtension: this._isAddon() ? this.parent.name + '-pod-styles' : 'pod-styles',
-      annotation: 'StyleManifest (ember-component-css combining all style files that there are extensions for)'
-    });
+    var styleManifest = debugTree(
+      new StyleManifest(podStylesWithoutExcluded, {
+        outputFileNameWithoutExtension: this._isAddon() ? this.parent.name + '-pod-styles' : 'pod-styles',
+        annotation: 'StyleManifest (ember-component-css combining all style files that there are extensions for)'
+      }),
+      'styleManifest'
+    );
 
-    tree = new Merge([podStyles, styleManifest, tree].filter(Boolean), {
-      annotation: 'Merge (ember-component-css merge namespacedStyles with style manafest)'
-    });
+    tree = debugTree(
+      new Merge([podStyles, styleManifest, tree].filter(Boolean), {
+        annotation: 'Merge (ember-component-css merge namespacedStyles with style manafest)'
+      }),
+      'merged'
+    );
 
     return tree;
   },
