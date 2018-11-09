@@ -2,7 +2,6 @@ import Router from '@ember/routing/router';
 import { getOwner } from '@ember/application';
 
 import podNames from 'ember-component-css/pod-names';
-import Ember from "ember";
 
 Router.reopen({
   didTransition(routes) {
@@ -13,7 +12,7 @@ Router.reopen({
       let route = routes[i];
       let currentPath = 'route:' + route.name.replace(/\./g, '/');
 
-      const config = Ember.getOwner(this).resolveRegistration('config:environment');
+      const config = getOwner(this).resolveRegistration('config:environment');
       if (!currentPath.includes('@')) {
         currentPath = currentPath.replace('route:', 'route:' + config.modulePrefix + '@');
       }
