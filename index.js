@@ -9,8 +9,21 @@ var StyleManifest = require('broccoli-style-manifest');
 module.exports = {
 
   _getStyleFunnel: function() {
+    if (this.parent.isModuleUnification()) {
+      return this._getMUStyleFunnel();
+    }
     return new Merge([this._getPodStyleFunnel(), this._getClassicStyleFunnel()], {
       annotation: 'Merge (ember-component-css merge pod and classic styles)'
+    });
+  },
+
+  _getMUStyleFunnel: function() {
+    return new Funnel(this.projectRoot, {
+      srcDir: 'ui',
+      exclude: ['styles/**/*'],
+      include: ['**/*.{' + this.allowedStyleExtensions + ',}'],
+      allowEmpty: true,
+      annotation: 'Funnel (ember-component-css grab files)'
     });
   },
 
@@ -20,7 +33,7 @@ module.exports = {
       exclude: ['styles/**/*'],
       include: ['**/*.{' + this.allowedStyleExtensions + ',}'],
       allowEmpty: true,
-      annotation: 'Funnel (ember-component-css grab files)'
+      annotation: 'Funnel (ember-component-css grab files)' + (this._isAddon() ? this.parent.name : '')
     });
   },
 
@@ -33,7 +46,7 @@ module.exports = {
   },
 
   _podDirectory: function() {
-    return this.appConfig.podModulePrefix && !this._isAddon() ? this.appConfig.podModulePrefix.replace(this.appConfig.modulePrefix, '') : '';
+    return this.appConfig.podModulePrefix && !this._isAddon() ? this.appConfig.podModulePrefix.replace(this.appConfig.modulePrefix, '') : '.';
   },
 
   _namespacingIsEnabled: function() {
@@ -48,7 +61,9 @@ module.exports = {
 
   _projectRoot: function(trees) {
     var projectRoot;
-    if (this._isAddon()) {
+    if (this.parent.isModuleUnification()) {
+      projectRoot = this.parent.root + '/src';
+    } else if (this._isAddon()) {
       projectRoot = this.parent.root + '/addon';
     } else if (trees && trees.app) {
       projectRoot = trees.app;
@@ -77,15 +92,21 @@ module.exports = {
   included: function(app) {
     this._super.included.apply(this, arguments);
 
-    this.projectRoot = this._projectRoot(app.trees);
-
     if (this._isAddon()) {
       this.parent.treeForMethods['addon-styles'] = 'treeForParentAddonStyles';
       this.parent.treeForParentAddonStyles = this.treeForParentAddonStyles.bind(this);
     }
 
     this.appConfig = app.project.config(this._getEnvironment());
-    this.addonConfig = this.appConfig['ember-component-css'] || {};
+    this.addonConfig = this.appConfig['ember-component-css'] || {
+      routeRootPaths: [],
+      componentRootPaths: []
+    };
+    if (this.appConfig.podModulePrefix) {
+      this.addonConfig.routeRootPaths.push(this.appConfig.podModulePrefix.split(this.appConfig.modulePrefix+'/')[1]);
+    }
+    this.projectRoot = this._projectRoot(app.trees);
+
     this.classicStyleDir = this.addonConfig.classicStyleDir || 'component-styles';
     this.terseClassNames = Boolean(this.addonConfig.terseClassNames);
     this.allowedStyleExtensions = app.registry.extensionsForType('css').filter(Boolean);
@@ -95,6 +116,8 @@ module.exports = {
     var config = {
       "ember-component-css": {
         terseClassNames: false,
+        routeRootPaths: [],
+        componentRootPaths: [],
       },
     };
     if (enviroment === 'production') {
@@ -110,7 +133,10 @@ module.exports = {
         annotation: 'Merge (ember-component-css merge all process styles for a complete list of styles)'
       });
 
+      // namespaceStyles=true prefixes all css class names: <addonname>__classname
+      // path or component debugKey must be "components:<addonname>@<componentname>"
       var podNames = new ExtractNames(allPodStyles, {
+        addonConfig: this.addonConfig,
         classicStyleDir: this.classicStyleDir,
         terseClassNames: this.terseClassNames,
         annotation: 'Walk (ember-component-css extract class names from style paths)'
@@ -136,18 +162,20 @@ module.exports = {
   },
 
   treeForStyles: function(tree) {
-    if (!this._isAddon()) {
-      tree = this.processComponentStyles(tree);
-    }
+    tree = this.processComponentStyles(tree);
     return this._super.treeForStyles.call(this, tree);
   },
 
   processComponentStyles: function(tree) {
     var podStyles = this._getStyleFunnel();
+    podStyles = new Funnel(podStyles, {
+      destDir: this._isAddon() ? this.parent.name : this.parent.name()
+    });
     this._allPodStyles.push(podStyles);
 
     if (this._namespacingIsEnabled()) {
       podStyles = new ProcessStyles(podStyles, {
+        addonConfig: this.addonConfig,
         extensions: this.allowedStyleExtensions,
         classicStyleDir: this.classicStyleDir,
         terseClassNames: this.terseClassNames,
@@ -161,7 +189,7 @@ module.exports = {
     });
 
     var styleManifest = new StyleManifest(podStylesWithoutExcluded, {
-      outputFileNameWithoutExtension: 'pod-styles',
+      outputFileNameWithoutExtension: this._isAddon() ? this.parent.name + '-pod-styles' : 'pod-styles',
       annotation: 'StyleManifest (ember-component-css combining all style files that there are extensions for)'
     });
 
